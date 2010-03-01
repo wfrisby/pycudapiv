@@ -15,8 +15,6 @@ import math
 # pycudafft vs cufft
 #
 
-
-
 class FGrid:
     def __init__(self,fx, fy, nx, ny):
         self.fx = fx
