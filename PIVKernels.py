@@ -1,10 +1,10 @@
 # WesLee Frisby 
 # Kernels used for PIV
-
+import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
 Kernel_2Dblock_maxloc = """
-__global__ void maxloc(float * in, int * out)
+__global__ void maxloc(float2 * in, int * out)
 {
 int tindex = threadIdx.x + blockDim.x * threadIdx.y;
 int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
@@ -13,7 +13,7 @@ int gindex = xIndex + yIndex * gridDim.x * blockDim.x;
 
 __shared__ float smem[16*16];
 __shared__ int mloc[16*16];
-smem[tindex] = in[gindex];
+smem[tindex] = in[gindex].x;
 mloc[tindex] = threadIdx.y | (threadIdx.x << 16);
 __syncthreads();
 
@@ -125,7 +125,15 @@ __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y
   //Perform the multiplication
   // Faster with function call. Memory value lookups seem slow.
   //This has bank conflicts...
-  fsection[index_section] = CmplxConjMult(fsection[index_section],gsection[index_section]);
+  float2 h;
+  float2 f = fsection[index_section];
+  float2 g = gsection[index_section];
+  float k1 = g.x*(f.x + f.y);
+  float k2 = f.x*(-g.y-g.x);
+  float k3 = f.y*(g.x-g.y);
+  h.x = k1 - k3;
+  h.y = k1 + k2;
+  fsection[index_section] = h;//CmplxConjMult(fsection[index_section],gsection[index_section]);
 
   __syncthreads();
 

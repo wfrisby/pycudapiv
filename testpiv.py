@@ -47,12 +47,28 @@ class PIVtransposes:
         self.block = (self.bsize,self.bsize/2,1) 
         self.grid = (self.nx/self.bsize,self.ny/self.bsize)
         self.numwind = self.grid[0]*self.grid[1]
+class mydisplay:
+    def __init__(self):
+        self.count=0       
+    def displayResults(self,res, cm=pylab.cm.jet, title='Specify a title'):
+        self.count=self.count+1
+        pylab.figure(self.count)
+        pylab.imshow(res, cm)
+        pylab.colorbar()
+        pylab.title(title)
         
-fx = 3
-fy = 3
-nx = 2**5
-ny = 2**5
+fx = 0
+fy = 0
+nx = 2**10
+ny = 2**10
 grid = FGrid(fx,fy,nx,ny).grid
+
+displayResults = mydisplay().displayResults
+
+displayResults(grid.real,title="Initial Grid") 
+
+start = cuda.Event()
+stop = cuda.Event()
 
 ccview = np.asarray(grid).copy()
 view1 = np.asarray(grid).copy()
@@ -75,35 +91,45 @@ cuda.memcpy_htod(gpuimage2, grid) #transfer the same grid to other image
 
 plan = _2DFFT(nx,ny) #setup 2D FFT Plan
 
+start.record()
 plan.execute(gpuimage1, gpuresult1, tran16, trandata) #execute 2D FFT on image1
 plan.execute(gpuimage2, gpuresult2, tran16, trandata) #execute 2D FFT on image2
+stop.record()
+stop.synchronize()
+exec_time = stop.time_since(start)
 
 #transfer back the results to test for correctness
 cuda.memcpy_dtoh(view1, gpuresult1)
 cuda.memcpy_dtoh(view2, gpuresult2)
 
-def displayResults(res, count, cm=pylab.cm.jet, title='Specify a title'):
-    pylab.figure(count)
-    pylab.imshow(res, cm)
-    pylab.colorbar()
-    pylab.title(title)
+displayResults(view1.real,title="FFT 1")
+displayResults(view2.real,title="FFT 2")
 
-displayResults(view1.real,1,title="FFT 1")
-displayResults(view2.real,2,title="FFT 2")
-
+start.record()
 ccmult(gpuresult1, gpuresult2, np.int32(nx), np.int32(ny), block=(16,16,1), grid=trandata.grid)
+stop.record()
+stop.synchronize()
+ccmult_time = stop.time_since(start)
 
 cuda.memcpy_dtoh(ccview, gpuresult1)
 
-displayResults(ccview.real,3,title="CCMULT Result")
+displayResults(ccview.real,title="CCMULT Result")
 
+start.record()
 plan.execute(gpuresult1, gpuresult2, tran16, trandata, reverse=True ) #inverse FFT
+stop.record()
+stop.synchronize()
+ifft_time = stop.time_since(start)
 
 cuda.memcpy_dtoh(ifftview, gpuresult2)
 
-displayResults(ifftview.real,4,title="IFFT Result")
+displayResults(ifftview.real,title="IFFT Result")
 
+start.record()
 maxloc(gpuresult1, gpupeaks, block=(16,16,1), grid=trandata.grid) #peak detection
+stop.record()
+stop.synchronize()
+mloc_time = stop.time_since(start)
 
 cuda.memcpy_dtoh(hostpeaks, gpupeaks)
 
@@ -114,4 +140,9 @@ def mloc(ary):
         yloc = ary[x] & f;
         print 'x',xloc,'y',yloc
         
-mloc(hostpeaks)
+#mloc(hostpeaks)
+print "These times are in miliseconds:"
+print "2-Image FFT time:",exec_time
+print "CCMult time:",ccmult_time
+print "IFFT time:",ifft_time
+print "Maxloc time:",mloc_time
