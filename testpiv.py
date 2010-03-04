@@ -54,6 +54,11 @@ nx = 2**5
 ny = 2**5
 grid = FGrid(fx,fy,nx,ny).grid
 
+ccview = np.asarray(grid).copy()
+view1 = np.asarray(grid).copy()
+view2 = np.asarray(grid).copy()
+ifftview = np.asarray(grid).copy()
+
 trandata = PIVtransposes(nx,ny) #Build parameters for tranpose
 
 hostpeaks = np.zeros(trandata.numwind,np.int32) #Host peak data
@@ -73,9 +78,30 @@ plan = _2DFFT(nx,ny) #setup 2D FFT Plan
 plan.execute(gpuimage1, gpuresult1, tran16, trandata) #execute 2D FFT on image1
 plan.execute(gpuimage2, gpuresult2, tran16, trandata) #execute 2D FFT on image2
 
-ccmult(gpuresult1, gpuresult2, block=(16,16,1), grid=trandata.grid)
+#transfer back the results to test for correctness
+cuda.memcpy_dtoh(view1, gpuresult1)
+cuda.memcpy_dtoh(view2, gpuresult2)
+
+def displayResults(res, count, cm=pylab.cm.jet, title='Specify a title'):
+    pylab.figure(count)
+    pylab.imshow(res, cm)
+    pylab.colorbar()
+    pylab.title(title)
+
+displayResults(view1.real,1,title="FFT 1")
+displayResults(view2.real,2,title="FFT 2")
+
+ccmult(gpuresult1, gpuresult2, np.int32(nx), np.int32(ny), block=(16,16,1), grid=trandata.grid)
+
+cuda.memcpy_dtoh(ccview, gpuresult1)
+
+displayResults(ccview.real,3,title="CCMULT Result")
 
 plan.execute(gpuresult1, gpuresult2, tran16, trandata, reverse=True ) #inverse FFT
+
+cuda.memcpy_dtoh(ifftview, gpuresult2)
+
+displayResults(ifftview.real,4,title="IFFT Result")
 
 maxloc(gpuresult1, gpupeaks, block=(16,16,1), grid=trandata.grid) #peak detection
 
@@ -87,3 +113,5 @@ def mloc(ary):
         xloc = ary[x] >> 16;
         yloc = ary[x] & f;
         print 'x',xloc,'y',yloc
+        
+mloc(hostpeaks)
