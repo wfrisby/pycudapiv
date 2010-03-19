@@ -4,12 +4,27 @@ import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
 Kernel_2Dblock_maxloc = """
-__global__ void maxloc(float2 * in, int * out)
+struct short2_ {
+    signed short x;
+    signed short y;
+};
+
+//typedef struct short2_ short2;
+
+union shorty_ {
+    int itemp;
+    struct short2_ myshort;
+};
+typedef union shorty_ myshort;
+
+//__global__ void maxloc(float2 * in, int * out)
+__global__ void maxloc(float2 * in, float2 * out)
 {
 int tindex = threadIdx.x + blockDim.x * threadIdx.y;
 int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
 int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
 int gindex = xIndex + yIndex * gridDim.x * blockDim.x;
+
 
 __shared__ float smem[16*16];
 __shared__ int mloc[16*16];
@@ -28,7 +43,21 @@ for(unsigned int z=1; z < bd; z*=2) {
     }
     __syncthreads();
 }
-if (tindex == 0) out[blockIdx.x + gridDim.x*blockIdx.y] = mloc[0];
+if (tindex == 0) {
+	myshort temp;
+    temp.itemp = mloc[0];
+    temp.itemp+=0x00080008; //FFT shift the maxloc
+    temp.itemp&=0x00EF00EF; //mod 16 on both arrays
+    //int b1,b2;
+    //b1 = temp.myshort.x<0x0008;
+    //b2 = temp.myshort.y<0x0008;
+    //temp.myshort.x=(temp.myshort.x-0x0008)*b1 + (!b1)*(0x0008-temp.myshort.x);
+    //temp.myshort.y=(temp.myshort.y-0x0008)*b2 + (!b2)*(0x0008-temp.myshort.y); //-windowsize/2 -8 -8
+    //temp.myshort.x=temp.myshort.x-0x0008;
+    //temp.myshort.y=0x0008-temp.myshort.y;
+	out[blockIdx.x + gridDim.x*blockIdx.y].x = (float)(temp.myshort.x-0x0008);//temp.itemp;
+    out[blockIdx.x + gridDim.x*blockIdx.y].y = (float)(0x0008-temp.myshort.y);
+}
 }
 """
 
@@ -254,13 +283,157 @@ __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y
 }
 """
 
+average_kernel = """
+__global__ void average(float2 * in, float2 * out)
+{
+__shared__ float2 smem[16][16+1];
 
-smod1 = SourceModule(Kernel_2Dblock_maxloc)
-maxloc = smod1.get_function("maxloc")
+//int tindex = threadIdx.x + blockDim.x * threadIdx.y;
+int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
+int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
+int gindex = xIndex + yIndex * gridDim.x * blockDim.x;
 
-smod2 = SourceModule(ComplexConjMultiplicationStry)
+//Load in the dang memory
+smem[threadIdx.y][threadIdx.x].x = in[gindex].x;
+smem[threadIdx.y][threadIdx.x].y = in[gindex].y;
+
+__syncthreads();
+//0 && threadIdx.x < 15 && threadIdx.y < 15
+if (threadIdx.x > 0 && threadIdx.y > 0 && threadIdx.x < 15 && threadIdx.y < 15) {
+    //Only compute on the inner vectors for their 8 neighbors
+    smem[threadIdx.y][threadIdx.x].x = (smem[threadIdx.y][threadIdx.x+1].x +
+                                      smem[threadIdx.y][threadIdx.x-1].x + 
+                                      smem[threadIdx.y+1][threadIdx.x].x +
+                                      smem[threadIdx.y-1][threadIdx.x].x +
+                                      smem[threadIdx.y+1][threadIdx.x+1].x +
+                                      smem[threadIdx.y+1][threadIdx.x-1].x +
+                                      smem[threadIdx.y-1][threadIdx.x+1].x +
+                                      smem[threadIdx.y-1][threadIdx.x-1].x)/8.0f;
+                                      
+    smem[threadIdx.y][threadIdx.x].y = (smem[threadIdx.y][threadIdx.x+1].y +
+                                      smem[threadIdx.y][threadIdx.x-1].y + 
+                                      smem[threadIdx.y+1][threadIdx.x].y +
+                                      smem[threadIdx.y-1][threadIdx.x].y +
+                                      smem[threadIdx.y+1][threadIdx.x+1].y +
+                                      smem[threadIdx.y+1][threadIdx.x-1].y +
+                                      smem[threadIdx.y-1][threadIdx.x+1].y +
+                                      smem[threadIdx.y-1][threadIdx.x-1].y)/8.0f;
+    __syncthreads();
+}
+//Output the dang memory
+out[gindex].x = smem[threadIdx.y][threadIdx.x].x;
+out[gindex].y = smem[threadIdx.y][threadIdx.x].y;
+
+}
+"""
+
+kernel_max_32 = """
+struct short2_ {
+    signed short x;
+    signed short y;
+};
+
+union shorty_ {
+    int itemp;
+    struct short2_ myshort;
+};
+typedef union shorty_ myshort;
+
+__global__ void max_32(float2 *in, float2 *out)
+{
+int tindex = threadIdx.x + blockDim.x * threadIdx.y;
+int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
+int yIndex; //= blockIdx.y * blockDim.y + threadIdx.y;
+int gindex; //= xIndex + yIndex * gridDim.x * blockDim.x;
+
+__shared__ float smem[32*8];
+__shared__ int mloc[32*8];
+
+float max_value = 0;
+int max_loc = 0;
+int bd = blockDim.x*blockDim.y;
+
+//Compute max in temporary region. Store the results in local varible current_max
+for(unsigned int i=0; i<4; i++) {
+    yIndex = blockIdx.y * blockDim.y * 4 + threadIdx.y + 8*i;
+    gindex = xIndex + yIndex * gridDim.x * blockDim.x;
+    smem[tindex] = in[gindex].x;
+    mloc[tindex] = (threadIdx.y + 8*i) | (threadIdx.x << 16);
+    
+    __syncthreads(); //Wait while all input is loaded
+
+    for(unsigned int z=1; z < bd; z*=2) {
+        int mindex = 2*z*tindex;
+        if(mindex < bd) {
+            int g = smem[mindex] > smem[mindex+z];
+            smem[mindex] = g*smem[mindex] + (!g)*smem[mindex+z];
+            mloc[mindex] = g*mloc[mindex] + (!g)*mloc[mindex+z];
+        }
+        __syncthreads();
+    }
+    if(tindex==0) { //It's only one thread checking
+        if(max_value<smem[0]) {
+            max_loc = mloc[0];
+            max_value = smem[0];
+        }
+    }
+}
+
+if(tindex==0) {
+    myshort temp;
+    temp.itemp = max_loc;
+    temp.itemp+=0x00100010; //FFT shift the maxloc
+    temp.itemp&=0x001F001F; //mod 32 on both arrays
+    
+    out[blockIdx.x + gridDim.x*blockIdx.y].x = (float)(0x00010-temp.myshort.x);
+    out[blockIdx.x + gridDim.x*blockIdx.y].y = (float)(temp.myshort.y-0x0010);
+}
+}
+"""
+
+transpose32= """
+/*
+* Transpose 32x32
+* TILE_DIM = 32x32
+* BLOCK_ROWS = 8
+* Threads = 32x8
+* Grid = size_x/32 x size_y/32
+*/
+#define TILE_DIM 32
+#define BLOCK_ROWS 8
+__global__ void transpose32(float2 * idata, float2 *odata, int width, int height, int num)
+{
+
+__shared__ float blockx[TILE_DIM][TILE_DIM+1];
+__shared__ float blocky[TILE_DIM][TILE_DIM+1];
+
+int xIndex = blockIdx.x * TILE_DIM + threadIdx.x;
+int yIndex = blockIdx.y * TILE_DIM + threadIdx.y;
+int index = xIndex + yIndex*width;
+
+   for (int i= 0; i< TILE_DIM; i+=BLOCK_ROWS) {
+        blockx[threadIdx.y+i][threadIdx.x] = idata[index + i*width].x;
+        blocky[threadIdx.y+i][threadIdx.x] = idata[index + i*width].y;
+   }
+
+__syncthreads();
+
+   for (int i = 0; i < TILE_DIM; i+=BLOCK_ROWS) {
+        odata[index+i*height].x = blockx[threadIdx.x][threadIdx.y+i];
+        odata[index+i*height].y = blocky[threadIdx.x][threadIdx.y+i];
+   }
+}
+"""
+
+
+smod1 = SourceModule(kernel_max_32)
+maxloc = smod1.get_function("max_32")
+
+smod2 = SourceModule(ComplexConjMultiplication)
 ccmult = smod2.get_function("PointWiseConjMult")
 
-smod3 = SourceModule(transpose16new)
-tran16 = smod3.get_function("transpose16")
+smod3 = SourceModule(transpose32)
+tran16 = smod3.get_function("transpose32")
 
+smod4 = SourceModule(average_kernel)
+average = smod4.get_function("average")

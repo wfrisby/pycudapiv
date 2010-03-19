@@ -25,6 +25,7 @@ from PIVKernels import tran16, ccmult, maxloc, average
 import pycuda.driver as cuda
 import numpy as np
 import pylab
+import _piv as pivim
 
 from pycudafft import FFTPlan
 
@@ -58,7 +59,11 @@ class PIVtransposes:
         self.nx = nx
         self.ny = ny
         self.bsize = bsize
-        self.block = (self.bsize,self.bsize/2,1) 
+        if(bsize==16):
+            self.block = (self.bsize,self.bsize/2,1) 
+        if(bsize==32):
+            self.block = (self.bsize,self.bsize/4,1)
+            print "32"
         self.grid = (self.nx/self.bsize,self.ny/self.bsize)
         self.numwind = self.grid[0]*self.grid[1]
         self.shape = (self.grid[0],self.grid[1])
@@ -83,22 +88,11 @@ ny = 2**10
 g1 = cuda.pagelocked_empty(1024*1024,'int16')
 g2 = cuda.pagelocked_empty(1024*1024,'int16')
 
-cuda.load_bin_image("synthetic4_B.bin",g1)
-cuda.load_bin_image("synthetic4_A.bin",g2)
+pivim.load_bin_image("frame1.bin",g1)
+pivim.load_bin_image("frame2.bin",g2)
 
 grid = g1.astype('complex64').reshape(1024,1024)
-grid2 = g2.astype('complex64').reshape(1024,1024)
-
-#grid = FGrid(fx,fy,nx,ny).grid
-#grid2 = FGrid(fx,fy,nx,ny).grid
-
-#grid[0:4,0:4] = 5+0j;
-
-#grid[7:11,0:4] = 5+0j;
-#grid2[1:5,1:5] = 5+0j;
-#grid2[2:6,2:6] = 5+0j
-#grid2[4:8,0:4] = 5+0j
-#grid2[9:13,2:6] = 5+0j 
+grid2 = g2.astype('complex64').reshape(1024,1024) 
 
 displayResults = mydisplay(display=True).displayResults
 
@@ -113,7 +107,7 @@ view1 = np.asarray(grid).copy()
 view2 = np.asarray(grid).copy()
 ifftview = np.asarray(grid).copy()
 
-trandata = PIVtransposes(nx,ny) #Build parameters for tranpose
+trandata = PIVtransposes(nx,ny,bsize=32) #Build parameters for tranpose
 
 hostpeaks = np.zeros(trandata.shape,np.complex64) #Host peak data
 gpupeaks = cuda.mem_alloc(hostpeaks.nbytes) #Device memory to store the peak result
@@ -127,7 +121,7 @@ gpuresult2 = cuda.mem_alloc(grid.nbytes) #Memory for transpose of image2 on GPU
 cuda.memcpy_htod(gpuimage1, grid) #transfer grid image to device
 cuda.memcpy_htod(gpuimage2, grid2) #transfer the shifted grid to other image
 
-plan = _2DFFT(nx,ny) #setup 2D FFT Plan
+plan = _2DFFT(nx,ny,bsize=32) #setup 2D FFT Plan
 
 start.record()
 plan.execute(gpuimage1, gpuresult1, tran16, trandata) #execute 2D FFT on image1
@@ -144,7 +138,7 @@ displayResults(view1.real,title="FFT 1")
 displayResults(view2.real,title="FFT 2")
 
 start.record()
-ccmult(gpuresult1, gpuresult2, np.int32(nx), np.int32(ny), block=(16,16,1), grid=trandata.grid)
+ccmult(gpuresult1, gpuresult2, np.int32(nx), np.int32(ny), block=(16,16,1), grid=(nx/16,ny/16))
 stop.record()
 stop.synchronize()
 ccmult_time = stop.time_since(start)
@@ -164,16 +158,16 @@ cuda.memcpy_dtoh(ifftview, gpuresult2)
 displayResults(ifftview.real,title="IFFT Result")
 
 start.record()
-maxloc(gpuresult1, gpupeaks, block=(16,16,1), grid=trandata.grid) #peak detection
+maxloc(gpuresult1, gpupeaks, block=(32,8,1), grid=trandata.grid) #peak detection
 stop.record()
 stop.synchronize()
 mloc_time = stop.time_since(start)
 
-start.record()
-average(gpupeaks, gpupeaks, block=(16,16,1), grid=(4,4))
-stop.record()
-stop.synchronize()
-avg_time = stop.time_since(start)
+#start.record()
+#average(gpupeaks, gpupeaks, block=(16,16,1), grid=(4,4))
+#stop.record()
+#stop.synchronize()
+#avg_time = stop.time_since(start)
 
 
 cuda.memcpy_dtoh(hostpeaks, gpupeaks)
@@ -201,10 +195,10 @@ print "2-Image FFT time:",exec_time
 print "CCMult time:",ccmult_time
 print "IFFT time:",ifft_time
 print "Maxloc time:",mloc_time
-print "Average time:",avg_time
+#print "Average time:",avg_time
 
 
-def fftshift2(data,size=16):
+""" def fftshift2(data,size=16):
     newdata = np.zeros((size,size),dtype=np.float32);
     #Swap 1st and 3rd quad
     newdata[size/2:size,0:size/2] = data[0:size/2,size/2:size]
@@ -214,9 +208,10 @@ def fftshift2(data,size=16):
     #quad 4 with 2
     newdata[size/2:size,size/2:size] = data[0:size/2,0:size/2]
     return newdata
+"""
     
-result = fftshift2(ifftview)
-displayResults(result,title="Shifted results")
+#result = fftshift2(ifftview)
+#displayResults(result,title="Shifted results")
 #testcc = view1*view2.conj()
 #a[size/2:size,size/2:size] = view1[0:size/2,0:size/2]
 #pylab.figure(10);
@@ -238,7 +233,9 @@ pylab.figure(11);
 
 #cuda.memcpy_dtoh(Un, gU)
 #cuda.memcpy_dtoh(Vn, gV)
+cvec = np.arange(32)
+cvec = cvec[::-1]
 
-pylab.quiver(hostpeaks.real,hostpeaks.imag)
+pylab.quiver(cvec, cvec, hostpeaks.real,hostpeaks.imag)
 
 pylab.show()
