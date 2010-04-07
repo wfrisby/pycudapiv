@@ -15,6 +15,8 @@ import math
 # pycudafft vs cufft
 #
 
+
+
 class FGrid:
     def __init__(self,fx, fy, nx, ny):
         self.fx = fx
@@ -23,7 +25,7 @@ class FGrid:
         self.ny = ny 
         self.tx = np.linspace(0,1,self.nx)
         self.ty = np.linspace(0,1,self.ny)
-        self.x,self.y = np.meshgrid(self.tx,self.ty)
+        self.x, self.y = np.meshgrid(self.tx,self.ty)
         self.grid = (np.cos(2*np.pi*self.fx*self.x)*np.cos(2*np.pi*self.fy*self.y)).astype(np.complex64)
 """
 The PIVtransposes includes transposes specific to 

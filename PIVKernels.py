@@ -125,21 +125,71 @@ __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y
   //Perform the multiplication
   // Faster with function call. Memory value lookups seem slow.
   //This has bank conflicts...
-  float2 h;
-  float2 f = fsection[index_section];
-  float2 g = gsection[index_section];
-  float k1 = g.x*(f.x + f.y);
-  float k2 = f.x*(-g.y-g.x);
-  float k3 = f.y*(g.x-g.y);
-  h.x = k1 - k3;
-  h.y = k1 + k2;
-  fsection[index_section] = h;//CmplxConjMult(fsection[index_section],gsection[index_section]);
+  //float2 h;
+  //float2 f = fsection[index_section];
+  //float2 g = gsection[index_section];
+  //float k1 = g.x*(f.x + f.y);
+  //float k2 = f.x*(-g.y-g.x);
+  //float k3 = f.y*(g.x-g.y);
+  //h.x = k1 - k3;
+  //h.y = k1 + k2;
+  fsection[index_section] = CmplxConjMult(fsection[index_section],gsection[index_section]);
 
   __syncthreads();
 
   //write back to global memory
   f[index_in].x = fsection[index_section].x;
   f[index_in].y = fsection[index_section].y;
+}
+"""
+
+newComplexConjMultiplication = """
+
+
+/**
+ * Pointwise Conjugate multiplication of 2-2D complex floating point arrays.
+ *
+ * @param float2 f - input/output 2D array that will store the result.
+ * @param float2 g - input 2D array that will be conjugated during multiplication.
+ * @param int size_x - the width of the 2D arrays
+ * @param int size_y - the height of the 2D arrays
+ **/
+
+__global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y)
+{
+  //Shared memory which will store sections of the arrays before multiplication.
+  
+  unsigned int xBlock = gridDim.x*blockIdx.x;
+  unsigned int yBlock = gridDim.y*blockIdx.y;
+  unsigned int xIndex = xBlock + threadIdx.x;
+  unsigned int yIndex = yBlock + threadIdx.y;
+
+  unsigned int index_in = size_x*yIndex + xIndex;
+
+  // Load the shared variables with global data from f
+  //fsection[index_section].x = f[index_in].x*g[index_in].x+f[index_in].y*g[index_in].y;
+  //fsection[index_section].y = f[index_in].y*g[index_in].x-f[index_in].x*g[index_in].y;
+
+  float2 nf;
+  float2 ng;
+  nf = f[index_in];
+  ng = g[index_in];
+  
+  //fsection[index_section].x = nf.x*ng.x+nf.y*ng.y;
+  //fsection[index_section].y = nf.y*ng.x-nf.x*ng.y;
+  
+  f[index_in].x = nf.x*ng.x+nf.y*ng.y;
+  f[index_in].y = nf.y*ng.x-nf.x*ng.y;
+
+  //(fx+fyj)*(gx-gyj)
+  // x = fxgx + fygy
+  // y = fygx - fxgy
+
+  //__syncthreads();
+
+  //write back to global memory
+  //f[index_in].x = fsection[index_section].x;
+  //f[index_in].y = fsection[index_section].y;
 }
 """
 

@@ -25,6 +25,7 @@ class FGrid:
         self.ty = np.linspace(0,1,self.ny)
         self.x, self.y = np.meshgrid(self.tx,self.ty)
         self.grid = (np.cos(2*np.pi*self.fx*self.x)*np.cos(2*np.pi*self.fy*self.y)).astype(np.complex64)
+        self.grid = self.grid*0;
         
 class _2DFFT:
     def __init__(self,nx,ny,bsize=16):
@@ -32,12 +33,12 @@ class _2DFFT:
         self.ny = np.int32(ny)
         self.bsize = bsize #block size
         self.batch = nx/bsize*ny #How many 1D-FFTs?
-        #
         self.fftplan = FFTPlan(self.bsize,1)
     def execute(self, data, out, transpose, tdata, reverse=False):
         self.fftplan.execute(data, batch=self.batch, inverse=reverse)
         transpose(data, out, self.nx, self.ny, np.int32(1), block=tdata.block, grid=tdata.grid)
-        self.fftplan.execute(out, batch=self.batch, inverse=reverse)
+        self.fftplan.execute(out, data, batch=self.batch, inverse=reverse)
+        transpose(data, out, self.nx, self.ny, np.int32(1), block=tdata.block, grid=tdata.grid)
         
 class PIVtransposes:
     def __init__(self,nx,ny,bsize=16):
@@ -47,25 +48,32 @@ class PIVtransposes:
         self.block = (self.bsize,self.bsize/2,1) 
         self.grid = (self.nx/self.bsize,self.ny/self.bsize)
         self.numwind = self.grid[0]*self.grid[1]
+        
 class mydisplay:
     def __init__(self):
         self.count=0       
     def displayResults(self,res, cm=pylab.cm.jet, title='Specify a title'):
         self.count=self.count+1
         pylab.figure(self.count)
-        pylab.imshow(res, cm)
+        pylab.imshow(res, cm, interpolation='nearest')
         pylab.colorbar()
         pylab.title(title)
         
 fx = 0
 fy = 0
-nx = 2**10
-ny = 2**10
+nx = 2**4
+ny = 2**4
 grid = FGrid(fx,fy,nx,ny).grid
+grid2 = FGrid(fx,fy,nx,ny).grid
+
+grid[0:4,0:4] = 5+0j;
+#grid2[1:5,1:5] = 5+0j;
+grid2[2:6,2:6] =5+0j
 
 displayResults = mydisplay().displayResults
 
-displayResults(grid.real,title="Initial Grid") 
+displayResults(grid.real,title="Initial Grid")
+displayResults(grid2.real,title="Shifted Grid")
 
 start = cuda.Event()
 stop = cuda.Event()
@@ -87,7 +95,7 @@ gpuresult1 = cuda.mem_alloc(grid.nbytes) #Memory for transpose of image1 on GPU
 gpuresult2 = cuda.mem_alloc(grid.nbytes) #Memory for transpose of image2 on GPU
 
 cuda.memcpy_htod(gpuimage1, grid) #transfer grid image to device
-cuda.memcpy_htod(gpuimage2, grid) #transfer the same grid to other image
+cuda.memcpy_htod(gpuimage2, grid2) #transfer the shifted grid to other image
 
 plan = _2DFFT(nx,ny) #setup 2D FFT Plan
 
@@ -140,9 +148,28 @@ def mloc(ary):
         yloc = ary[x] & f;
         print 'x',xloc,'y',yloc
         
-#mloc(hostpeaks)
+mloc(hostpeaks)
 print "These times are in miliseconds:"
 print "2-Image FFT time:",exec_time
 print "CCMult time:",ccmult_time
 print "IFFT time:",ifft_time
 print "Maxloc time:",mloc_time
+
+
+def fftshift2(data,size=16):
+    newdata = np.zeros((size,size),dtype=np.float32);
+    #Swap 1st and 3rd quad
+    newdata[size/2:size,0:size/2] = data[0:size/2,size/2:size]
+    newdata[0:size/2,size/2:size] = data[size/2:size,0:size/2]
+    #quad 2 with 4
+    newdata[0:size/2,0:size/2] = data[size/2:size,size/2:size]
+    #quad 4 with 2
+    newdata[size/2:size,size/2:size] = data[0:size/2,0:size/2]
+    return newdata
+    
+result = fftshift2(ifftview)
+displayResults(result,title="Shifted results")
+#testcc = view1*view2.conj()
+#a[size/2:size,size/2:size] = view1[0:size/2,0:size/2]
+
+pylab.show()
