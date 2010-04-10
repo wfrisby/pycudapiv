@@ -239,15 +239,18 @@ __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y
   //Perform the multiplication
   // Faster with function call. Memory value lookups seem slow.
   //This has bank conflicts...
-  //float2 h;
-  //float2 f = fsection[index_section];
-  //float2 g = gsection[index_section];
-  //float k1 = g.x*(f.x + f.y);
-  //float k2 = f.x*(-g.y-g.x);
-  //float k3 = f.y*(g.x-g.y);
-  //h.x = k1 - k3;
-  //h.y = k1 + k2;
-  fsection[index_section] = CmplxConjMult(fsection[index_section],gsection[index_section]);
+  float2 k;
+  float2 h = fsection[index_section];
+  float2 j = gsection[index_section];
+  //float k1 = j.x*(h.x + h.y);
+  //float k2 = h.x*(-j.y-j.x);
+  //float k3 = h.y*(j.x-j.y);
+  //k.x = k1 - k3;
+  //k.x = j.x*(h.x + h.y) - h.y*(j.x-j.y);
+  //k.y = k1 + k2;
+  //k.y = j.x*(h.x + h.y) + h.x*(-j.y-j.x);
+  fsection[index_section].x = h.x*j.x+h.y*j.y;
+  fsection[index_section].y = h.y*j.x-h.x*j.y; //CmplxConjMult(fsection[index_section],gsection[index_section]);
 
   __syncthreads();
 
