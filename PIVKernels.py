@@ -191,18 +191,12 @@ __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y
 """
 ComplexConjMultiplicationStry = """
 
-#define BLOCK_DIM 16
+#define BLOCK_DIM_X 32
+#define BLOCK_DIM_Y 16
 
  __device__ float2 CmplxConjMult(float2 f, float2 g)
 {
   float2 h;
-  //Conju Complex Multiplication
-  //The product (a+bi)*(c-di)
-  //k1 = c*(a+b)
-  //k2 = a*(-d-c)
-  //k3 = b*(c-d)
-  //Real part = k1-k3
-  //Imag part = k1+k2
 
   float k1 = g.x*(f.x + f.y);
   float k2 = f.x*(-g.y-g.x);
@@ -215,16 +209,16 @@ ComplexConjMultiplicationStry = """
 __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y)
 {
   //Shared memory which will store sections of the arrays before multiplication.
-  __shared__ float2 fsection[(BLOCK_DIM+1)*BLOCK_DIM];
-  __shared__ float2 gsection[(BLOCK_DIM+1)*BLOCK_DIM];
+  __shared__ float2 fsection[(BLOCK_DIM_X+1)*BLOCK_DIM_Y];
+  __shared__ float2 gsection[(BLOCK_DIM_X+1)*BLOCK_DIM_Y];
 
-  unsigned int xBlock = BLOCK_DIM*blockIdx.x;
-  unsigned int yBlock = BLOCK_DIM*blockIdx.y;
+  unsigned int xBlock = BLOCK_DIM_X*blockIdx.x;
+  unsigned int yBlock = BLOCK_DIM_Y*blockIdx.y;
   unsigned int xIndex = xBlock + threadIdx.x;
   unsigned int yIndex = yBlock + threadIdx.y;
 
   unsigned int index_in = size_x*yIndex + xIndex;
-  unsigned int index_section = threadIdx.y*(BLOCK_DIM+1) + threadIdx.x;
+  unsigned int index_section = threadIdx.y*(BLOCK_DIM_X+1) + threadIdx.x;
 
   // Load the shared variables with global data from f
   fsection[index_section].x = f[index_in].x;
@@ -260,58 +254,6 @@ __global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y
 }
 """
 
-
-
-
-newComplexConjMultiplication = """
-
-
-/**
- * Pointwise Conjugate multiplication of 2-2D complex floating point arrays.
- *
- * @param float2 f - input/output 2D array that will store the result.
- * @param float2 g - input 2D array that will be conjugated during multiplication.
- * @param int size_x - the width of the 2D arrays
- * @param int size_y - the height of the 2D arrays
- **/
-
-__global__ void PointWiseConjMult(float2 * f, float2 * g, int size_x, int size_y)
-{
-  //Shared memory which will store sections of the arrays before multiplication.
-  
-  unsigned int xBlock = gridDim.x*blockIdx.x;
-  unsigned int yBlock = gridDim.y*blockIdx.y;
-  unsigned int xIndex = xBlock + threadIdx.x;
-  unsigned int yIndex = yBlock + threadIdx.y;
-
-  unsigned int index_in = size_x*yIndex + xIndex;
-
-  // Load the shared variables with global data from f
-  //fsection[index_section].x = f[index_in].x*g[index_in].x+f[index_in].y*g[index_in].y;
-  //fsection[index_section].y = f[index_in].y*g[index_in].x-f[index_in].x*g[index_in].y;
-
-  float2 nf;
-  float2 ng;
-  nf = f[index_in];
-  ng = g[index_in];
-  
-  //fsection[index_section].x = nf.x*ng.x+nf.y*ng.y;
-  //fsection[index_section].y = nf.y*ng.x-nf.x*ng.y;
-  
-  f[index_in].x = nf.x*ng.x+nf.y*ng.y;
-  f[index_in].y = nf.y*ng.x-nf.x*ng.y;
-
-  //(fx+fyj)*(gx-gyj)
-  // x = fxgx + fygy
-  // y = fygx - fxgy
-
-  //__syncthreads();
-
-  //write back to global memory
-  //f[index_in].x = fsection[index_section].x;
-  //f[index_in].y = fsection[index_section].y;
-}
-"""
 
 smod1 = SourceModule(Kernel_2Dblock_maxloc)
 maxloc = smod1.get_function("maxloc")

@@ -64,8 +64,8 @@ class mydisplay:
         
 fx = 0
 fy = 0
-nx = 2**10
-ny = 2**10
+nx = 2**4
+ny = 2**4
 grid = FGrid(fx,fy,nx,ny).grid
 grid2 = FGrid(fx,fy,nx,ny).grid
 
@@ -76,7 +76,7 @@ grid[0:4,0:4] = 5+0j;
 grid2[2:6,2:6] = 5+0j
 #grid2[9:13,2:6] = 5+0j 
 
-displayResults = mydisplay(display=False).displayResults
+displayResults = mydisplay(display=True).displayResults
 
 displayResults(grid.real,title="Initial Grid")
 displayResults(grid2.real,title="Shifted Grid")
@@ -120,7 +120,7 @@ displayResults(view1.real,title="FFT 1")
 displayResults(view2.real,title="FFT 2")
 
 start.record()
-ccmult(gpuresult1, gpuresult2, np.int32(nx), np.int32(ny), block=(16,16,1), grid=trandata.grid)
+ccmult(gpuresult1, gpuresult2, np.int32(nx), np.int32(ny), block=(32,16,1), grid=trandata.grid)
 stop.record()
 stop.synchronize()
 ccmult_time = stop.time_since(start)
@@ -178,4 +178,4 @@ displayResults(result,title="Shifted results")
 #testcc = view1*view2.conj()
 #a[size/2:size,size/2:size] = view1[0:size/2,0:size/2]
 
-#pylab.show()
+pylab.show()
