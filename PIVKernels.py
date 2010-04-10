@@ -67,7 +67,6 @@ __shared__ float blocky[16][16+1];
 int xIndex = blockIdx.x * 16 + threadIdx.x;
 int yIndex = blockIdx.y * 16 + threadIdx.y;
 int index = xIndex + yIndex*width;
-
    
        blockx[threadIdx.y][threadIdx.x] = idata[index].x;
        blocky[threadIdx.y][threadIdx.x] = idata[index].y;

@@ -51,19 +51,21 @@ class PIVtransposes:
         self.numwind = self.grid[0]*self.grid[1]
         
 class mydisplay:
-    def __init__(self):
-        self.count=0       
+    def __init__(self,display=True):
+        self.count=0
+	self.display=display       
     def displayResults(self,res, cm=pylab.cm.jet, title='Specify a title'):
-        self.count=self.count+1
-        pylab.figure(self.count)
-        pylab.imshow(res, cm, interpolation='nearest')
-        pylab.colorbar()
-        pylab.title(title)
+        if self.display:
+		self.count=self.count+1
+        	pylab.figure(self.count)
+        	pylab.imshow(res, cm, interpolation='nearest')
+        	pylab.colorbar()
+        	pylab.title(title)
         
 fx = 0
 fy = 0
-nx = 2**4
-ny = 2**4
+nx = 2**10
+ny = 2**10
 grid = FGrid(fx,fy,nx,ny).grid
 grid2 = FGrid(fx,fy,nx,ny).grid
 
@@ -74,7 +76,7 @@ grid[0:4,0:4] = 5+0j;
 grid2[2:6,2:6] = 5+0j
 #grid2[9:13,2:6] = 5+0j 
 
-displayResults = mydisplay().displayResults
+displayResults = mydisplay(display=False).displayResults
 
 displayResults(grid.real,title="Initial Grid")
 displayResults(grid2.real,title="Shifted Grid")
@@ -152,7 +154,7 @@ def mloc(ary):
         yloc = ary[x] & f;
         print 'x',xloc,'y',yloc
         
-mloc(hostpeaks)
+#mloc(hostpeaks)
 print "These times are in miliseconds:"
 print "2-Image FFT time:",exec_time
 print "CCMult time:",ccmult_time
@@ -176,4 +178,4 @@ displayResults(result,title="Shifted results")
 #testcc = view1*view2.conj()
 #a[size/2:size,size/2:size] = view1[0:size/2,0:size/2]
 
-pylab.show()
+#pylab.show()
