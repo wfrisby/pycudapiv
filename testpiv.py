@@ -46,6 +46,7 @@ class PIVtransposes:
         self.ny = ny
         self.bsize = 16
         self.block = (self.bsize,self.bsize/2,1) 
+        #self.block = (self.bsize,self.bsize,1) 
         self.grid = (self.nx/self.bsize,self.ny/self.bsize)
         self.numwind = self.grid[0]*self.grid[1]
         
@@ -67,8 +68,11 @@ grid = FGrid(fx,fy,nx,ny).grid
 grid2 = FGrid(fx,fy,nx,ny).grid
 
 grid[0:4,0:4] = 5+0j;
+
+#grid[7:11,0:4] = 5+0j;
 #grid2[1:5,1:5] = 5+0j;
-grid2[2:6,2:6] =5+0j
+grid2[2:6,2:6] = 5+0j
+#grid2[9:13,2:6] = 5+0j 
 
 displayResults = mydisplay().displayResults
 

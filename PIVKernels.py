@@ -57,6 +57,54 @@ __syncthreads();
 }
 """
 
+transpose16new = """
+__global__ void transpose16(float2 * idata, float2 * odata, int width, int height, int num)
+{
+
+__shared__ float blockx[16][16+1];
+__shared__ float blocky[16][16+1];
+
+int xIndex = blockIdx.x * 16 + threadIdx.x;
+int yIndex = blockIdx.y * 16 + threadIdx.y;
+int index = xIndex + yIndex*width;
+
+   
+       blockx[threadIdx.y][threadIdx.x] = idata[index].x;
+       blocky[threadIdx.y][threadIdx.x] = idata[index].y;
+       blockx[threadIdx.y+8][threadIdx.x] = idata[index + (width<<3)].x;
+       blocky[threadIdx.y+8][threadIdx.x] = idata[index + (width<<3)].y;
+
+__syncthreads();
+
+        odata[index].x = blockx[threadIdx.x][threadIdx.y];
+        odata[index].y = blocky[threadIdx.x][threadIdx.y];
+        odata[index+(height<<3)].x = blockx[threadIdx.x][threadIdx.y+8];
+        odata[index+(height<<3)].y = blocky[threadIdx.x][threadIdx.y+8];
+}
+"""
+
+transpose16new_slow = """
+__global__ void transpose16(float2 * idata, float2 * odata, int width, int height, int num)
+{
+
+__shared__ float blockx[16][16+1];
+__shared__ float blocky[16][16+1];
+
+int xIndex = blockIdx.x * 16 + threadIdx.x;
+int yIndex = blockIdx.y * 16 + threadIdx.y;
+int index = xIndex + yIndex*width;
+
+   blockx[threadIdx.y][threadIdx.x] = idata[index].x;
+   blocky[threadIdx.y][threadIdx.x] = idata[index].y;
+
+__syncthreads();
+
+   odata[index].x = blockx[threadIdx.x][threadIdx.y];
+   odata[index].y = blocky[threadIdx.x][threadIdx.y];
+
+}
+"""
+
 ComplexConjMultiplication = """
 
 #define BLOCK_DIM 16
@@ -199,6 +247,6 @@ maxloc = smod1.get_function("maxloc")
 smod2 = SourceModule(ComplexConjMultiplication)
 ccmult = smod2.get_function("PointWiseConjMult")
 
-smod3 = SourceModule(transpose16 )
+smod3 = SourceModule(transpose16new)
 tran16 = smod3.get_function("transpose16")
 
