@@ -1,9 +1,11 @@
 #include <Python.h>
+#include <vtk_lib.h>
 #include <utility>
 #include <numeric>
 #include <algorithm>
 #include <numpy/arrayobject.h>
 #include <boost/python.hpp>
+
 
 //#include "ReadIM7.h"
 
@@ -15,8 +17,11 @@
     { import_array(); }
   } _array_importer;
 }*/
+
+
 using namespace boost::python;
 namespace py = boost::python;
+
 
 //import_array();
   
@@ -43,6 +48,24 @@ namespace py = boost::python;
       read_bin_image(file,adata);
   }
   
+  /* This function expects that the data object is complex valued with u,v combined*/
+  void write_vtk(py::object filename, py::object data, py::object winsize)
+  {
+      char const * file = py::extract<char const*>(filename);
+      int windsize = py::extract<int>(winsize);
+      int vecsize = 1024/windsize;
+      FILE * myfile = fopen(file,"w");
+      float2 * vectors = (float2*)PyArray_DATA(data.ptr());
+      //int nd = PyArray_NDIMS();
+      //int dims = PyArray_DIMS();
+      //We know the size of the images
+      //so we are going to hardcode the size
+      vtk_write_header(myfile,file);
+      vtk_write_grid_2d(myfile, vecsize, vecsize);
+      vtk_write_vector_2d(myfile, "Pass(1)", vectors, vecsize*vecsize);
+      fclose(myfile);
+  }
+  
 BOOST_PYTHON_MODULE(_piv)
 {
   //py::def("load_image", load_image,
@@ -50,6 +73,9 @@ BOOST_PYTHON_MODULE(_piv)
        
   py::def("load_bin_image", load_bin_image,
        (py::arg("filename"), py::arg("data")));
+
+  py::def("write_vtk", write_vtk,
+       (py::arg("filename"), py::arg("data"), py::arg("winsize")));
 }
 
 

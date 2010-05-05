@@ -20,7 +20,7 @@ Tesla
 Maxbandwidth = 800*2*512/8 = 102.4 GB/s
 """
 
-from PIVKernels import tran16, ccmult, maxloc, average
+from PIVKernels import tran16, ccmult, maxloc, average, toComplex
 
 import pycuda.driver as cuda
 import numpy as np
@@ -63,7 +63,8 @@ class PIVtransposes:
             self.block = (self.bsize,self.bsize/2,1) 
         if(bsize==32):
             self.block = (self.bsize,self.bsize/4,1)
-            print "32"
+        if(bsize==64):
+            self.block = (self.bsize/2,self.bsize/8,1)
         self.grid = (self.nx/self.bsize,self.ny/self.bsize)
         self.numwind = self.grid[0]*self.grid[1]
         self.shape = (self.grid[0],self.grid[1])
@@ -85,19 +86,23 @@ fy = 0
 nx = 2**10
 ny = 2**10
 
-g1 = cuda.pagelocked_empty(1024*1024,'int16')
-g2 = cuda.pagelocked_empty(1024*1024,'int16')
+g1 = cuda.pagelocked_empty((nx,ny),'int16')
+g2 = cuda.pagelocked_empty((nx,ny),'int16')
 
-pivim.load_bin_image("frame1.bin",g1)
-pivim.load_bin_image("frame2.bin",g2)
+imname1 = "fr1.bin"
+imname2 = "fr2.bin"
+outname = "frame.vtk"
 
-grid = g1.astype('complex64').reshape(1024,1024)
-grid2 = g2.astype('complex64').reshape(1024,1024) 
+pivim.load_bin_image(imname1,g1)
+pivim.load_bin_image(imname2,g2)
+
+grid = g1.astype('complex64').reshape(nx,ny)
+#grid2 = g2.astype('complex64').reshape(nx,ny)
 
 displayResults = mydisplay(display=True).displayResults
 
-displayResults(grid.real,title="Initial Grid")
-displayResults(grid2.real,title="Shifted Grid")
+displayResults(g1,title="Initial Grid")
+displayResults(g2,title="Shifted Grid")
 
 start = cuda.Event()
 stop = cuda.Event()
@@ -107,10 +112,13 @@ view1 = np.asarray(grid).copy()
 view2 = np.asarray(grid).copy()
 ifftview = np.asarray(grid).copy()
 
-trandata = PIVtransposes(nx,ny,bsize=32) #Build parameters for tranpose
+trandata = PIVtransposes(nx,ny,bsize=64) #Build parameters for tranpose
 
 hostpeaks = np.zeros(trandata.shape,np.complex64) #Host peak data
 gpupeaks = cuda.mem_alloc(hostpeaks.nbytes) #Device memory to store the peak result
+
+tempimage1 = cuda.mem_alloc(g1.nbytes)
+tempimage2 = cuda.mem_alloc(g1.nbytes)
 
 gpuimage1 = cuda.mem_alloc(grid.nbytes) #Memory for image1 on GPU
 gpuimage2 = cuda.mem_alloc(grid.nbytes) #Memory for image2 on GPU
@@ -118,10 +126,16 @@ gpuimage2 = cuda.mem_alloc(grid.nbytes) #Memory for image2 on GPU
 gpuresult1 = cuda.mem_alloc(grid.nbytes) #Memory for transpose of image1 on GPU
 gpuresult2 = cuda.mem_alloc(grid.nbytes) #Memory for transpose of image2 on GPU
 
-cuda.memcpy_htod(gpuimage1, grid) #transfer grid image to device
-cuda.memcpy_htod(gpuimage2, grid2) #transfer the shifted grid to other image
+cuda.memcpy_htod(tempimage1,g1)
+cuda.memcpy_htod(tempimage2,g2)
 
-plan = _2DFFT(nx,ny,bsize=32) #setup 2D FFT Plan
+toComplex(gpuimage1, tempimage1, np.int32(nx/2), block=(32,8,1), grid=(nx/64,ny/32))
+toComplex(gpuimage2, tempimage2, np.int32(nx/2), block=(32,8,1), grid=(nx/64,ny/32))
+
+#cuda.memcpy_htod(gpuimage1, grid) #transfer grid image to device
+#cuda.memcpy_htod(gpuimage2, grid2) #transfer the shifted grid to other image
+
+plan = _2DFFT(nx,ny,bsize=64) #setup 2D FFT Plan
 
 start.record()
 plan.execute(gpuimage1, gpuresult1, tran16, trandata) #execute 2D FFT on image1
@@ -158,7 +172,7 @@ cuda.memcpy_dtoh(ifftview, gpuresult2)
 displayResults(ifftview.real,title="IFFT Result")
 
 start.record()
-maxloc(gpuresult1, gpupeaks, block=(32,8,1), grid=trandata.grid) #peak detection
+maxloc(gpuresult1, gpupeaks, block=(64,8,1), grid=trandata.grid) #peak detection
 stop.record()
 stop.synchronize()
 mloc_time = stop.time_since(start)
@@ -233,9 +247,12 @@ pylab.figure(11);
 
 #cuda.memcpy_dtoh(Un, gU)
 #cuda.memcpy_dtoh(Vn, gV)
-cvec = np.arange(32)
+bsize = 64
+cvec = np.arange(0,nx,bsize)
 cvec = cvec[::-1]
 
 pylab.quiver(cvec, cvec, hostpeaks.real,hostpeaks.imag)
+
+pivim.write_vtk(outname,hostpeaks,bsize)
 
 pylab.show()
